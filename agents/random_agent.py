@@ -23,7 +23,8 @@ class RandomAgent:
 
     def __init__(self):
         """初始化随机智能体（无需特殊参数）"""
-        # TODO: 学生实现
+        # DONE: 学生实现
+        # self.board_size=None
         pass
 
     def select_move(self, game_state: GameState) -> Move:
@@ -36,10 +37,23 @@ class RandomAgent:
         Returns:
             随机选择的合法 Move
         """
-        # TODO: 学生实现
+        # DONE: 学生实现
         # 提示：使用 game_state.legal_moves() 获取所有合法棋步
         # 提示：使用 random.choice() 随机选择
-        pass
+        #point 需要棋盘的大小 game_state.board_size
+        #board_size (x,y)
+        # self.board_size=game_state.board_size if self.board_size is None else self.board_size
+        #均匀随机选取point
+        #棋盘上所有的点
+       
+        possible_moves=[move.point for move in game_state.legal_moves() if move.point is not None]
+        # print(possible_moves)
+        if possible_moves==[]:
+            return Move(is_pass=True)
+        point=random.choice(possible_moves)
+        return Move(point=point)
+
+    
 
 
 # 便捷函数（向后兼容 play.py）

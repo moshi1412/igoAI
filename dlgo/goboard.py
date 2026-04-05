@@ -174,7 +174,9 @@ class Board:
                     continue
                 if neighbor_string is not string:
                     self._replace_string(neighbor_string.with_liberty(point))
+            #修改 直接去除该点?
             self._grid[point] = None
+            # self._grid.remove(point)
             # 撤销该子的哈希值
             self._hash ^= zobrist.HASH_CODE[point, string.color]
 
@@ -227,7 +229,6 @@ class Board:
     def zobrist_hash(self):
         """返回当前局面的 Zobrist 哈希值。"""
         return self._hash
-
 
 class Move:
     """
@@ -315,6 +316,22 @@ class GameState:
         return GameState(
             next_board, self.next_player.other, self, move
         )
+    def num_remove_stone(self,move,player=None):
+        """移除"""
+        if player is None:
+            player=self.next_player.other
+        if not move.is_play:
+            return 0
+        if self.board.get(move.point) is not None:
+            return 0
+        next_board = copy.deepcopy(self.board)
+        next_board.place_stone(self.next_player, move.point)
+        
+        stone_list=[key for key,value in self.board._grid.items() if value is not None and value.color==player]
+        stone_num=len(stone_list)
+        stone_list_aft=[key for key,value in next_board._grid.items() if value is not None and value.color==player]
+        stone_num_aft=len(stone_list_aft)
+        return stone_num-stone_num_aft
 
     @classmethod
     def new_game(cls, board_size):
@@ -334,8 +351,11 @@ class GameState:
 
     def is_move_self_capture(self, player, move):
         """检查是否自杀（落子后无气）。"""
+        
         if not move.is_play:
             return False
+        if self.board.get(move.point) is not None:
+            return True
         next_board = copy.deepcopy(self.board)
         next_board.place_stone(player, move.point)
         new_string = next_board.get_go_string(move.point)
@@ -350,6 +370,8 @@ class GameState:
         """检查是否违反劫规则。"""
         if not move.is_play:
             return False
+        if self.board.get(move.point) is not None:
+            return True
         next_board = copy.deepcopy(self.board)
         next_board.place_stone(player, move.point)
         next_situation = (player.other, next_board.zobrist_hash())
@@ -357,15 +379,35 @@ class GameState:
 
     def is_valid_move(self, move):
         """检查棋步是否合法。"""
+        #加一条 不能只紧自己的气 否则就是在自杀
         if self.is_over():
             return False
         if move.is_pass or move.is_resign:
             return True
+        if self.board.get(move.point) is not None:
+            return False
         return (
-            self.board.get(move.point) is None
-            and not self.is_move_self_capture(self.next_player, move)
+            not self.is_move_self_capture(self.next_player, move)
             and not self.does_move_violate_ko(self.next_player, move)
+            # and not self.is_move_self_decrease(self.next_player, move)
         )
+    def is_move_self_decrease(self, player, move):
+        """检查是否只减少自己的气。"""
+        if self.board.get(move.point) is not None:
+            return True
+        liberty_bef={Player.black:0,Player.white:0}
+        liberty_bef[player]=self.get_all_liberties_num(self.board,player)
+        liberty_bef[player.other]=self.get_all_liberties_num(self.board,player.other)
+        next_board = copy.deepcopy(self.board)
+        next_board.place_stone(player, move.point)
+        liberty_aft={Player.black:0,Player.white:0}
+        liberty_aft[player]=self.get_all_liberties_num(next_board,player)
+        liberty_aft[player.other]=self.get_all_liberties_num(next_board,player.other)
+        #得到value for key,value in next_board._grid.items() 但是要去重 value是unhashable的
+        #not （自己的减少 且敌人的不变）
+        return  (liberty_bef[player] >= liberty_aft[player]) and  (liberty_aft[player.other] == liberty_bef[player.other])
+    
+
 
     def is_over(self):
         """检查对局是否结束。"""
@@ -398,3 +440,58 @@ class GameState:
             return self.next_player
         game_result = compute_game_result(self)
         return game_result.winner
+    def get_all_liberties_num(self, board, player):
+        """总气数（去重统计）"""
+        unique_liberties = set()
+        
+        # 首先收集所有唯一的go_string（用id作为键）
+        unique_strings = {}
+        for _, go_string in board._grid.items():
+            if go_string is not None and go_string.color == player:
+                unique_strings[id(go_string)] = go_string
+        
+        # 收集所有气并去重
+        for go_string in unique_strings.values():
+            # Point是namedtuple，hashable，可以直接加入set
+            unique_liberties.update(go_string.liberties)
+        
+        return len(unique_liberties)         
+    
+
+    def delta_liberty_num(self,this_player):
+        """气数变化。"""
+        liberty_bef = self.get_all_liberties_num(self.board,this_player)#子节点的颜色
+        liberty_other_bef=self.get_all_liberties_num(self.board,this_player.other)#子节点对手颜色
+        
+        # liberty_after = new_game_state.get_all_liberties_num(new_game_state.board,self.next_player)
+        # liberty_other_after=new_game_state.get_all_liberties_num(new_game_state.board,self.next_player.other)
+        # print(liberty_bef,liberty_other_bef)
+        return liberty_bef-liberty_other_bef#
+        # print(node.game_state.last_move.point,"this ",liberty_bef,liberty_after,"other",liberty_other_bef,liberty_other_after)
+
+    def if_connect(self, player, move):
+        """检查是否连接（返回棋串减少的数量）。"""
+        if move.point is None:
+            return 0
+        if self.board.get(move.point) is not None:
+            return 0
+        
+        # 收集落子前的唯一棋串
+        unique_bef = {}
+        for _, go_string in self.board._grid.items():
+            if go_string is not None and go_string.color == player:
+                unique_bef[id(go_string)] = go_string
+        
+        if len(unique_bef) == 0:  # 如果就没有自己的子 谈不上连接
+            return 0
+        
+        next_board = copy.deepcopy(self.board)
+        next_board.place_stone(player, move.point)
+        
+        # 收集落子后的唯一棋串
+        unique_aft = {}
+        for _, go_string in next_board._grid.items():
+            if go_string is not None and go_string.color == player:
+                unique_aft[id(go_string)] = go_string
+        
+        return len(unique_bef) - len(unique_aft)

@@ -27,26 +27,42 @@ def random_agent(game_state):
         return random.choice(moves)
 
 
-def mcts_agent(game_state):
+def mcts_agent(game_state, strategy='liberty_first', num_rounds=100):
     """MCTS 智能体（占位，学生实现后替换）。"""
     try:
         from agents.mcts_agent import MCTSAgent
-        agent = MCTSAgent(num_rounds=100)
+        agent = MCTSAgent(num_rounds=num_rounds, strategy=strategy)
         return agent.select_move(game_state)
     except ImportError as e:
         print(f"[WARN] MCTSAgent 未实现或导入错误: {e}")
         return random_agent(game_state)
 
 
-def minimax_agent(game_state):
+def minimax_agent(game_state, strategy='alphabeta', max_depth=3):
     """Minimax 智能体（占位，学生实现后替换）。"""
     try:
         from agents.minimax_agent import MinimaxAgent
-        agent = MinimaxAgent(max_depth=3)
-        return agent.select_move(game_state)
+        agent = MinimaxAgent(max_depth=max_depth)
+        return agent.select_move(game_state, strategy=strategy)
     except ImportError as e:
         print(f"[WARN] MinimaxAgent 未实现或导入错误: {e}")
         return random_agent(game_state)
+
+
+def get_agent(agent_type, strategy='random', num_rounds=100, minimax_strategy='alphabeta', max_depth=3):
+    """获取带策略参数的代理函数"""
+    if agent_type == "mcts":
+        def mcts_with_strategy(game_state):
+            return mcts_agent(game_state, strategy=strategy, num_rounds=num_rounds)
+        return mcts_with_strategy
+    elif agent_type == "random":
+        return random_agent
+    elif agent_type == "minimax":
+        def minimax_with_strategy(game_state):
+            return minimax_agent(game_state, strategy=minimax_strategy, max_depth=max_depth)
+        return minimax_with_strategy
+    else:
+        return random_agent
 
 
 AGENTS = {
@@ -54,6 +70,7 @@ AGENTS = {
     "mcts": mcts_agent,
     "minimax": minimax_agent,
 }
+
 
 
 def print_board(game_state):
@@ -130,7 +147,7 @@ def main():
     parser.add_argument(
         "--agent1",
         choices=AGENTS.keys(),
-        default="random",
+        default="minimax",
         help="黑方智能体",
     )
     parser.add_argument(
