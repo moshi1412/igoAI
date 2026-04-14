@@ -1,7 +1,7 @@
 """
-第三小问（选做）：Minimax 智能体
+第三小问（选做）：minmax 智能体
 
-实现 Minimax + Alpha-Beta 剪枝算法，与 MCTS 对比效果。
+实现 minmax + Alpha-Beta 剪枝算法，与 MCTS 对比效果。
 可选实现，用于对比不同搜索算法的差异。
 
 参考：《深度学习与围棋》第 3 章
@@ -9,27 +9,31 @@
 
 from dlgo.gotypes import Player,Point
 from dlgo.goboard import GameState, Move
+from dlgo.scoring import evaluate_territory
 from copy import deepcopy
+import time
 __all__ = ["MinimaxAgent"]
 
 INF=1e5
 
 class MinimaxAgent:
     """
-    Minimax 智能体（带 Alpha-Beta 剪枝）。
+    minmax 智能体（带 Alpha-Beta 剪枝）。
 
     属性：
         max_depth: 搜索最大深度
         evaluator: 局面评估函数
     """
 
-    def __init__(self, max_depth=3, evaluator=None):
+    def __init__(self, max_depth=3, eval=None,evaluator=None):
         self.max_depth = max_depth
         # 默认评估函数（TODO：学生可替换为神经网络）
         self.evaluator = evaluator or self._default_evaluator
         self.player=None
+        self.cache = GameResultCache()
+        self.eval="stone" if eval is None else eval
 
-    def select_move(self, game_state: GameState,strategy='minimax') -> Move:
+    def select_move(self, game_state: GameState,strategy='minmax') -> Move:
         """
         为当前局面选择最佳棋步。
 
@@ -39,20 +43,25 @@ class MinimaxAgent:
         Returns:
             选定的棋步
         """
-        # TODO: 实现 Minimax 搜索，调用 minimax 或 alphabeta
+        # TODO: 实现 minmax 搜索，调用 minmax 或 alphabeta
+        start_time=time.time()
         self.player=game_state.next_player
         if strategy=='minmax':
-            _,best_state=self.minimax(game_state, self.max_depth, True)
+            _,best_state=self.minmax(game_state, self.max_depth, True)
+            end_time=time.time()
+            print(f"time:{end_time-start_time}")
             return best_state.last_move
         if strategy=='alphabeta':
             _,best_state=self.alphabeta(game_state, self.max_depth, -INF, INF, True)
+            end_time=time.time()
+            print(f"time:{end_time-start_time}")
             return best_state.last_move
         
         
 
-    def minimax(self, game_state, depth, maximizing_player):
+    def minmax(self, game_state, depth, maximizing_player):
         """
-        基础 Minimax 算法。
+        基础 minmax 算法。
 
         Args:
             game_state: 当前局面
@@ -62,7 +71,7 @@ class MinimaxAgent:
         Returns:
             该局面的评估值和最佳节点
         """
-        # TODO: 实现 Minimax
+        # TODO: 实现 minmax
         # 提示：
         # 1. 终局或 depth=0 时返回评估值
         # 2. 如果是最大化方：取所有子节点最大值
@@ -72,35 +81,66 @@ class MinimaxAgent:
             # print_board(game_state)
             # print(game_state)
         #没有节点类 只能递归？
-        if game_state.is_over() or depth==0:
-            value=self.evaluator(game_state,maximizing_player)
-            # print(value)
-            return value,game_state
-        # possible_moves=game_state.legal_moves()  
-        pos_moves=self._get_ordered_moves(game_state)
-        children_state=[]
-        child_value=[]
-        for move in pos_moves:
-            # new_game_state=deepcopy(game_state)
-            new_game_state=game_state.apply_move(move)
-            children_state.append(new_game_state)
+        # if game_state.is_over() or depth==0:
+        #     value=self.evaluator(game_state,maximizing_player)
+        #     # print(value)
+        #     return value,game_state
+        # # possible_moves=game_state.legal_moves()  
+        # pos_moves=self._get_ordered_moves(game_state)
+        # children_state=[]
+        # child_value=[]
+        # for move in pos_moves:
+        #     # new_game_state=deepcopy(game_state)
+        #     new_game_state=game_state.apply_move(move)
+        #     children_state.append(new_game_state)
 
+        # for child_state in children_state:
+        #     value,_=self.minmax(child_state, depth-1, not maximizing_player)
+        #     child_value.append(value)
+        
+        # if maximizing_player:
+        #     # print(max(child_value),children_state[child_value.index(max(child_value))].last_move)
+        #     return max(child_value),children_state[child_value.index(max(child_value))]
+        # else:
+        #     # if depth==2:
+        #     #     print(child_value,children_state[child_value.index(min(child_value))].last_move)
+        #     return min(child_value),children_state[child_value.index(min(child_value))]
+        
+        
+        #使用哈希
+        # 先查缓存
+        zobrist_hash = game_state.board.zobrist_hash()
+        cached = self.cache.get(zobrist_hash)
+        if cached and cached['depth'] >= depth:
+            return cached['value'], game_state
+        
+        if game_state.is_over() or depth == 0:
+            value = self.evaluator(game_state, maximizing_player)
+            self.cache.put(zobrist_hash, depth, value, 'exact')
+            return value, game_state
+        
+        pos_moves = self._get_ordered_moves(game_state)
+        children_state = [game_state.apply_move(move) for move in pos_moves]
+        child_value = []
+        
         for child_state in children_state:
-            value,_=self.minimax(child_state, depth-1, not maximizing_player)
+            value, _ = self.minmax(child_state, depth - 1, not maximizing_player)
             child_value.append(value)
         
         if maximizing_player:
-            # print(max(child_value),children_state[child_value.index(max(child_value))].last_move)
-            return max(child_value),children_state[child_value.index(max(child_value))]
+            best_value = max(child_value)
+            best_state = children_state[child_value.index(best_value)]
         else:
-            # if depth==2:
-            #     print(child_value,children_state[child_value.index(min(child_value))].last_move)
-            return min(child_value),children_state[child_value.index(min(child_value))]
+            best_value = min(child_value)
+            best_state = children_state[child_value.index(best_value)]
         
+        # 存缓存
+        self.cache.put(zobrist_hash, depth, best_value, 'exact')
+        return best_value, best_state
 
     def alphabeta(self, game_state, depth, alpha, beta, maximizing_player):
         """
-        Alpha-Beta 剪枝优化版 Minimax。
+        Alpha-Beta 剪枝优化版 minmax。
 
         Args:
             game_state: 当前局面
@@ -113,47 +153,92 @@ class MinimaxAgent:
             该局面的评估值
         """
         # TODO: 实现 Alpha-Beta 剪枝
-        # 提示：在 minimax 基础上添加剪枝逻辑
+        # 提示：在 minmax 基础上添加剪枝逻辑
         # - 最大化方：如果 value >= beta 则剪枝
         # - 最小化方：如果 value <= alpha 则剪枝
-        this_alpha=-INF
-        this_beta=INF  
-        if depth==0 or game_state.is_over():
-            return self.evaluator(game_state,maximizing_player),game_state
+        #递归
+        # this_alpha=-INF
+        # this_beta=INF  
+        # if depth==0 or game_state.is_over():
+        #     return self.evaluator(game_state,maximizing_player),game_state
         
-        pos_moves=self._get_ordered_moves(game_state)
-        pos_states=[game_state.apply_move(move) for move in pos_moves]
-        # best_state=None
-        best_value=None
-        for i,move in enumerate(pos_moves):
-            # new_game_state=game_state.apply_move(move)
-            value,_=self.alphabeta(pos_states[i], depth-1, this_alpha, this_beta, not maximizing_player)
-            if depth==2:
-                print_board(pos_states[i])
-                print(value)
-                print(alpha,beta)
+        # pos_moves=self._get_ordered_moves(game_state)
+        # pos_states=[game_state.apply_move(move) for move in pos_moves]
+        # # best_state=None
+        # best_value=None
+        # for i,move in enumerate(pos_moves):
+        #     # new_game_state=game_state.apply_move(move)
+        #     value,_=self.alphabeta(pos_states[i], depth-1, this_alpha, this_beta, not maximizing_player)
+        #     if depth==2:
+        #         print_board(pos_states[i])
+        #         print(value)
+        #         print(alpha,beta)
+            
+        #     if maximizing_player:
+        #         if value>this_alpha:
+        #             this_alpha=value
+        #         if best_value is None or value>best_value:
+        #             best_value=value
+        #             best_id=i
+        #         if best_value>=beta:
+        #             return best_value,pos_states[best_id]
+        #     else:
+        #         if value<this_beta:
+        #             this_beta=value
+        #         if best_value is None or value<best_value:
+        #             best_value=value
+        #             best_id=i
+        #         if best_value<=alpha:
+        #             return best_value,pos_states[best_id]
+        
+        # return best_value,pos_states[best_id]
+        # 先查缓存
+        zobrist_hash = game_state.board.zobrist_hash()
+        cached = self.cache.get(zobrist_hash)
+        if cached and cached['depth'] >= depth:
+            return cached['value'], game_state
+        
+        if depth == 0 or game_state.is_over():
+            value = self.evaluator(game_state, maximizing_player)
+            self.cache.put(zobrist_hash, depth, value, 'exact')
+            return value, game_state
+        
+        pos_moves = self._get_ordered_moves(game_state)
+        pos_states = [game_state.apply_move(move) for move in pos_moves]
+        best_value = None
+        best_id = 0
+        this_alpha = alpha
+        this_beta = beta
+        
+        for i in range(len(pos_moves)):
+            value, _ = self.alphabeta(pos_states[i], depth - 1, this_alpha, this_beta, not maximizing_player)
             
             if maximizing_player:
-                if value>this_alpha:
-                    this_alpha=value
-                if best_value is None or value>best_value:
-                    best_value=value
-                    best_id=i
-                if best_value>=beta:
-                    return best_value,pos_states[best_id]
+                if value > this_alpha:
+                    this_alpha = value
+                if best_value is None or value > best_value:
+                    best_value = value
+                    best_id = i
+                if best_value >= beta:
+                   
+                    self.cache.put(zobrist_hash, depth, best_value, 'lower')
+                    return best_value, pos_states[best_id]
             else:
-                if value<this_beta:
-                    this_beta=value
-                if best_value is None or value<best_value:
-                    best_value=value
-                    best_id=i
-                if best_value<=alpha:
-                    return best_value,pos_states[best_id]
+                if value < this_beta:
+                    this_beta = value
+                if best_value is None or value < best_value:
+                    best_value = value
+                    best_id = i
+                if best_value <= alpha:
+                    
+                    self.cache.put(zobrist_hash, depth, best_value, 'upper')
+                    return best_value, pos_states[best_id]
         
-        return best_value,pos_states[best_id]
-        
+    
+        self.cache.put(zobrist_hash, depth, best_value, 'exact')
+        return best_value, pos_states[best_id]
 
-    def _default_evaluator(self, game_state,max_player):
+    def _default_evaluator(self, game_state,max_player,eval="stone"):
         """
         默认局面评估函数（简单版本）。
 
@@ -175,19 +260,29 @@ class MinimaxAgent:
         # else:
         #     player=game_state.next_player.other
         #直接投降需要给一些惩罚 对面选择投降则需要加分
-        if game_state.next_player==self.player:
-            punish=4   if not game_state.last_move.is_play else 0
-        elif game_state.next_player==self.player.other:
-            punish=-4   if not game_state.last_move.is_play else 0
-        delta_liberty=game_state.delta_liberty_num(self.player)
+        if eval=="stone":
+            #气数
+            if game_state.next_player==self.player:
+                punish=4   if not game_state.last_move.is_play else 0
+            elif game_state.next_player==self.player.other:
+                punish=-4   if not game_state.last_move.is_play else 0
+            delta_liberty=game_state.delta_liberty_num(self.player)
 
-        #子数
-        this_stones=[key for key,value in game_state.board._grid.items() if value is not None and value.color==self.player]
-        this_stone_num=len(this_stones)
-        other_stones=[key for key,value in game_state.board._grid.items() if value is not None and value.color!=self.player]
-        other_stone_num=len(other_stones)
-        delta_stones_num=this_stone_num-other_stone_num
-        return delta_stones_num+delta_liberty+punish
+            #子数
+        
+            this_stones=[key for key,value in game_state.board._grid.items() if value is not None and value.color==self.player]
+            this_stone_num=len(this_stones)
+            other_stones=[key for key,value in game_state.board._grid.items() if value is not None and value.color!=self.player]
+            other_stone_num=len(other_stones)
+            delta_stones_num=this_stone_num-other_stone_num
+            return delta_stones_num+delta_liberty+punish
+        elif eval=="territory":
+            #地盘
+            territory=evaluate_territory(game_state.board)
+            if self.player==Player.black:
+                return territory.num_black_territory
+            else:
+                return territory.num_white_territory
 
     def _get_ordered_moves(self, game_state):
         """
@@ -241,21 +336,31 @@ class GameResultCache:
         self.cache = {}
 
     def get(self, zobrist_hash):
-        """获取缓存的评估值。"""
+       
         return self.cache.get(zobrist_hash)
 
     def put(self, zobrist_hash, depth, value, flag='exact'):
         """
-        缓存评估结果。
-
         Args:
             zobrist_hash: 局面哈希
             depth: 搜索深度
             value: 评估值
             flag: 'exact'/'lower'/'upper'（精确值/下界/上界）
         """
-        # TODO: 实现缓存逻辑（考虑深度优先替换策略）
-        pass
+        entry = self.cache.get(zobrist_hash)
+        # 如果没有缓存，或者当前深度更大，就更新缓存
+        if entry is None or depth > entry['depth']:
+            self.cache[zobrist_hash] = {
+                'depth': depth,
+                'value': value,
+                'flag': flag
+            }
+    
+    def clear(self):
+        """清空缓存，用于新的搜索。"""
+        self.cache.clear()
+
+
 
 def print_board(game_state):
             """打印棋盘（简化版）。"""
@@ -276,3 +381,4 @@ def print_board(game_state):
                     else:
                         print(" .", end="")
                 print()
+

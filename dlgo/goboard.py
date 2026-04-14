@@ -389,7 +389,7 @@ class GameState:
         return (
             not self.is_move_self_capture(self.next_player, move)
             and not self.does_move_violate_ko(self.next_player, move)
-            # and not self.is_move_self_decrease(self.next_player, move)
+            and not self.is_move_self_decrease(self.next_player, move)
         )
     def is_move_self_decrease(self, player, move):
         """检查是否只减少自己的气。"""
@@ -405,7 +405,7 @@ class GameState:
         liberty_aft[player.other]=self.get_all_liberties_num(next_board,player.other)
         #得到value for key,value in next_board._grid.items() 但是要去重 value是unhashable的
         #not （自己的减少 且敌人的不变）
-        return  (liberty_bef[player] >= liberty_aft[player]) and  (liberty_aft[player.other] == liberty_bef[player.other])
+        return  (liberty_bef[player] > liberty_aft[player]) and  (liberty_aft[player.other] == liberty_bef[player.other])
     
 
 
@@ -418,7 +418,7 @@ class GameState:
         second_last_move = self.previous_state.last_move
         if second_last_move is None:
             return False
-        return self.last_move.is_pass and second_last_move.is_pass
+        return self.last_move.is_pass and second_last_move.is_pass 
 
     def legal_moves(self):
         """返回所有合法棋步。"""

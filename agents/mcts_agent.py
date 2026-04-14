@@ -7,11 +7,12 @@ MCTS (蒙特卡洛树搜索) 智能体模板。
 
 from dlgo.gotypes import Player, Point
 from dlgo.goboard import GameState, Move
+from dlgo.scoring import compute_game_result
 from .random_agent import RandomAgent
 import math
 import time
 __all__ = ["MCTSAgent"]
-
+PENALTY=4
 
 
 class MCTSNode:
@@ -36,9 +37,13 @@ class MCTSNode:
         self.value_sum = 0
         self.prior = prior
         
-        # TODO: 初始化其他必要属性
-        self.remove_num=0
-        self.delta_liberty=0
+        # 初始化其他必要属性
+        self.remove_num = 0
+        self.delta_liberty = 0
+        
+        # RAVE 相关属性
+        self.rave_visits = {}  # {move_key: count
+        self.rave_values = {}  # {move_key: value_sum
     @property
     def value(self):
         """计算平均价值 = value_sum / visit_count，防止除零。"""
@@ -59,15 +64,55 @@ class MCTSNode:
     def is_terminal(self):
         """是否为终局节点。"""
         return self.game_state.is_over()
-    def UCT_cal(self, c=1.414, strategy='random'):
-        if strategy == "remove_first":
-            return [node.remove_num + node.value + c * math.sqrt(math.log(self.visit_count) / node.visit_count) for node in self.children]
-        elif strategy == "liberty_first":
-            return [node.delta_liberty + node.value + c * math.sqrt(math.log(self.visit_count) / node.visit_count) for node in self.children]
-        else:
-            return [node.value + c * math.sqrt(math.log(self.visit_count) / node.visit_count) for node in self.children]
-        return [node.value + c * math.sqrt(math.log(self.visit_count) / node.visit_count) for node in self.children]
-    def best_child(self, c=1.414,strategy='random'):
+    @staticmethod
+    def get_move_key(move):
+        """生成移动的唯一键，用于 RAVE。"""
+        if move.is_pass:
+            return "pass"
+        elif hasattr(move, 'is_resign') and move.is_resign:
+            return "resign"
+        elif hasattr(move, 'point') and move.point:
+            return (move.point.row, move.point.col)
+        return "unknown"
+    
+    def rave_value(self, move_key):
+        """获取某个移动的 RAVE 价值。"""
+        if move_key not in self.rave_visits or self.rave_visits[move_key] == 0:
+            return 0
+        return self.rave_values[move_key] / self.rave_visits[move_key]
+    
+    def UCT_cal(self, c=1.414, strategy='random', k=300):
+        uct_values = []        
+        for node in self.children:
+            if strategy == "remove_first":
+                base_value = node.remove_num + node.value
+            elif strategy == "liberty_first":
+                base_value = node.delta_liberty + node.value
+            else:
+                base_value = node.value
+            bias= c * math.sqrt(math.log(self.visit_count) / node.visit_count) if node.visit_count > 0 else float('inf')
+            if not node.game_state.last_move.is_play:
+                base_value -= PENALTY
+            
+            # RAVE 混合策略
+            if strategy == "rave" and self.parent is not None:  # 只在非根节点使用 RAVE
+                move_key = self.get_move_key(node.game_state.last_move)
+                rave_val = self.rave_value(move_key)
+                
+                # 计算权重 beta
+                beta = node.visit_count / (node.visit_count + k)
+                
+                # 混合真实价值和 RAVE 价值
+                mixed_value = beta * node.value + (1 - beta) * rave_val
+                uct_val = mixed_value + bias
+            else:
+                uct_val = base_value + bias
+            
+            uct_values.append(uct_val)
+        
+        return uct_values
+    
+    def best_child(self, c=1.414, strategy='random', k=300):
         """
         选择最佳子节点（UCT 算法）。
 
@@ -75,6 +120,8 @@ class MCTSNode:
 
         Args:
             c: 探索常数（默认 sqrt(2)）
+            strategy: 策略类型
+            k: RAVE 权重参数
 
         Returns:
             最佳子节点
@@ -84,9 +131,44 @@ class MCTSNode:
         for node in self.children:
             if node.visit_count==0:
                 return node
-        UCT_value=self.UCT_cal(c,strategy)
-        best_index=UCT_value.index(max(UCT_value))
+        
+        UCT_value = self.UCT_cal(c, strategy, k)
+        best_index = UCT_value.index(max(UCT_value))
         return self.children[best_index]
+    
+    def backup_with_rave(self, value, simulated_moves):
+        """
+        反向传播，同时更新普通统计和 RAVE 统计。
+        
+        Args:
+            value: 模拟结果
+            simulated_moves: 模拟过程中的移动列表 [(move, player), ...]
+        """
+        node = self
+        current_value = value
+        
+        while node is not None:
+            # 更新普通统计
+            node.visit_count += 1
+            node.value_sum += current_value
+            
+            # 更新 RAVE 统计：对于每个在模拟中出现的移动，在同色的节点更新
+            if node.parent is not None:  # 跳过根节点
+                node_move = node.game_state.last_move
+                if node_move:
+                    node_player = node.game_state.next_player.other  # 刚下这步的玩家
+                    for sim_move, sim_player in simulated_moves:
+                        if sim_player == node_player:
+                            move_key = self.get_move_key(sim_move)
+                            if move_key not in node.rave_visits:
+                                node.rave_visits[move_key] = 0
+                                node.rave_values[move_key] = 0
+                            node.rave_visits[move_key] += 1
+                            node.rave_values[move_key] += current_value
+            
+            # 反转价值（下一个节点是对手视角）
+            current_value = 1 - current_value
+            node = node.parent
 
     def expand(self):
         """
@@ -150,12 +232,11 @@ class MCTSAgent:
         last_root: 最后一次搜索的根节点（用于debug可视化）
     """
 
-    def __init__(self, num_rounds=1000, temperature=1.0,strategy='random'):
+    def __init__(self, num_rounds=100, temperature=1.0, strategy='random', rave_k=300):
         self.num_rounds = num_rounds
         self.temperature = temperature
-        # self.random_agent_b=RandomAgent()
-        # self.random_agent_w=RandomAgent()
-        self.strategy=strategy
+        self.strategy = strategy
+        self.rave_k = rave_k      # RAVE 的 k 参数
         self.last_root = None
 
     def select_move(self, game_state: GameState) -> Move:
@@ -185,15 +266,19 @@ class MCTSAgent:
         for round in range(self.num_rounds):     
             node=root       
             while not node.is_leaf():
-                node=node.best_child()
+                node = node.best_child(strategy=self.strategy, k=self.rave_k)
             else:
                 #resign不扩展
-                if not node.game_state.last_move.is_resign:
+                if not node.game_state.is_over():
                     node.expand()
-                # if node.game_state.last_move.is_resign:
-                #    print("resign")
-                sim_result=self._simulate(node.game_state)
-                node.backup(sim_result)            
+                
+                sim_result, simulated_moves = self._simulate(node.game_state)
+                
+                if self.strategy == "rave":
+                    node.backup_with_rave(sim_result, simulated_moves)
+                else:
+                    node.backup(sim_result)            
+        
         self.last_root = root
         end_time=time.time()
         print(f"搜索时间：{end_time-start_time}秒")
@@ -214,35 +299,20 @@ class MCTSAgent:
             game_state: 起始局面
 
         Returns:
-            从当前玩家视角的结果（1=胜, 0=负, 0.5=和）
+            (score, simulated_moves): 从当前玩家视角的结果（1=胜, 0=负, 0.5=和），以及模拟过程中的移动列表
         """
-        #normal realize
-        # game_state=game_state
-        sum_player=game_state.next_player.other
-        # print(sum_player)
-        # score=0.5
-        winner=random_play(game_state)
-        # print_board(game_state)
+        sum_player = game_state.next_player.other
+        winner, simulated_moves = random_play(game_state,None)
+        
         if winner:
-            # print("胜者：",winner.name)
-            if winner==sum_player:
-                score=1
+            if winner == sum_player:
+                score = 1
             else:
-                score=0
+                score = 0
         else:
-            # print("平局")
-            score=0.5
-        # if verbose:
-        #     print("\n=== 终局 ===")
-        #     print_board(game_state)
-        #     if winner:
-        #         print(f"胜者: {winner.name}")
-        #     else:
-        #         print("平局")
+            score = 0.5
 
-        return score
-        # TODO: 实现快速模拟（含两种优化策略）
-        pass
+        return score, simulated_moves
 
     def _select_best_move(self, root):
         """
@@ -257,32 +327,39 @@ class MCTSAgent:
         # TODO: 根据访问次数或价值选择
         # for node in root.children:
         #     print(node.game_state.last_move.point,node.visit_count,node.value,node.remove_num,node.delta_liberty,'\n')      #根据价值选择
-        return root.best_child(strategy=self.strategy).game_state.last_move
+        return root.best_child(strategy=self.strategy,k=self.rave_k).game_state.last_move
 
 
 
-def random_play(game_state):
+def random_play(game_state,max_depth=None):
         agents = {
             Player.black:RandomAgent(),
             Player.white:RandomAgent(),
         }
+        if max_depth is None:
+            max_depth=game_state.board.num_rows * game_state.board.num_cols * 2
         # if game_state.last_move.is_resign:
         #     print("resign")
         move_count = 0
+        simulated_moves = [] 
+        
         while not game_state.is_over():
             agent_fn = agents[game_state.next_player]
             move = agent_fn.select_move(game_state)
+            player = game_state.next_player
+            
+            # 记录移动
+            simulated_moves.append((move, player))
+            
             game_state = game_state.apply_move(move)
             move_count += 1
 
-            if move_count > game_state.board.num_rows * game_state.board.num_cols * 2:
-                # print("[WARN] 步数过多，强制结束")
-                # print_board(game_state)
-                return winner_def(game_state)
-                break
+            if move_count > max_depth:
+                winner = compute_game_result(game_state).winner#领域
+                return (winner if winner else None), simulated_moves
         
         winner = game_state.winner()
-        return winner if winner else None 
+        return (winner if winner else None), simulated_moves 
 
 def print_board(game_state):
             """打印棋盘（简化版）。"""
@@ -314,4 +391,6 @@ def winner_def(game_state):
         return Player.white
     else:
         return None
+
+
     

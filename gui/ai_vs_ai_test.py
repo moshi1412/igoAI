@@ -7,22 +7,22 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from dlgo import GameState, Player, Point
 from dlgo.goboard import Move
-from play import AGENTS
+from play import AGENTS, get_agent, play_game
 
 
-class AIVsAIGameGUI:
-    def __init__(self, board_size=5, ai1="random", ai2="random", strategy='random', num_rounds=100, minmax_strategy='minmax', max_depth=3, rave_k=300, minmax_eval='stone'):
+class AIVsAITestGUI:
+    def __init__(self, board_size=5, ai1="random", ai2="random", strategy='random', num_rounds=100, minmax_strategy='minmax', max_depth=3, test_games=10, rave_k=300, minmax_eval='stone'):
         pygame.init()
         self.board_size = board_size
         self.grid_size = 80
         self.margin = 80
         self.board_height = self.margin * 2 + self.grid_size * (board_size - 1)
-        self.history_height = 150
+        self.history_height = 280
         self.window_width = self.board_height
         self.window_height = self.board_height + self.history_height
         
         self.screen = pygame.display.set_mode((self.window_width, self.window_height))
-        pygame.display.set_caption(f"iGo AI vs AI - {board_size}x{board_size}")
+        pygame.display.set_caption(f"iGo AI vs AI Test - {board_size}x{board_size}")
         
         self.colors = {
             'bg': (220, 179, 92),
@@ -34,35 +34,30 @@ class AIVsAIGameGUI:
         
         self.game = GameState.new_game(board_size)
         self.running = True
-        self.game_over = False
-        self.move_history = []
         self.should_return_to_menu = False
         self.last_move = None
         
-        from play import get_agent
         self.ai1_agent = get_agent(ai1, strategy=strategy, num_rounds=num_rounds, minmax_strategy=minmax_strategy, max_depth=max_depth, rave_k=rave_k, minmax_eval=minmax_eval)
         self.ai2_agent = get_agent(ai2, strategy=strategy, num_rounds=num_rounds, minmax_strategy=minmax_strategy, max_depth=max_depth, rave_k=rave_k, minmax_eval=minmax_eval)
         
         self.ai1_type = ai1
         self.ai2_type = ai2
+        
+        self.test_games = test_games
+        self.current_game = 0
+        self.results = {Player.black: 0, Player.white: 0, None: 0}
+        self.total_moves = 0
+        self.total_time = 0
+        self.test_complete = False
         self.paused = False
-        self.restart_requested = False
-        self.ai_thinking = False
+        self.move_history = []
+        
         self.font = pygame.font.Font(None, 20)
         self.font_large = pygame.font.Font(None, 28)
         self.font_small = pygame.font.Font(None, 16)
         
         self.back_button_rect = pygame.Rect(10, 10, 100, 35)
-    
-    def get_move_text(self, move):
-        if move.is_pass:
-            return "Pass"
-        elif hasattr(move, 'is_resign') and move.is_resign:
-            return "Resign"
-        elif hasattr(move, 'point') and move.point:
-            return f"({move.point.col},{move.point.row})"
-        return "?"
-    
+        
     def draw_board(self):
         self.screen.fill(self.colors['bg'])
         
@@ -106,95 +101,62 @@ class AIVsAIGameGUI:
                     pygame.draw.circle(self.screen, color, (x, y), self.grid_size // 2 - 8)
                     pygame.draw.circle(self.screen, self.colors['line'], (x, y), self.grid_size // 2 - 8, 1)
                     
-                    # 给最后落子的棋子添加框标记
                     if self.last_move and self.last_move.is_play and self.last_move.point == point:
                         box_size = self.grid_size // 2 - 12
                         pygame.draw.rect(self.screen, (255, 0, 0), 
                                         (x - box_size, y - box_size, box_size * 2, box_size * 2), 2)
     
-    def draw_history(self):
+    def draw_stats(self):
         history_rect = pygame.Rect(0, self.board_height, self.window_width, self.history_height)
         pygame.draw.rect(self.screen, self.colors['history_bg'], history_rect)
         
-        header = self.font_small.render("Move History:", True, (0, 0, 0))
-        self.screen.blit(header, (10, self.board_height + 10))
+        start_y = self.board_height + 10
+        line_height = 24
         
-        max_display = 6
-        start_y = self.board_height + 35
-        line_height = 18
-        
-        # 只显示最近的max_display步
-        start_idx = max(0, len(self.move_history) - max_display)
-        for i in range(start_idx, len(self.move_history)):
-            move_idx, player, move_text = self.move_history[i]
-            player_color = (0, 0, 0) if player == Player.black else (100, 100, 100)
-            player_bg = (220, 220, 220) if player == Player.black else (255, 255, 255)
-            
-            history_text = f"#{move_idx}: {player.name} - {move_text}"
-            text_surface = self.font_small.render(history_text, True, player_color)
-            text_rect = text_surface.get_rect(topleft=(15, start_y))
-            pygame.draw.rect(self.screen, player_bg, text_rect.inflate(4, 0))
-            self.screen.blit(text_surface, text_rect)
-            start_y += line_height
-        
-        # 如果之前有隐藏的步数，显示提示
-        if start_idx > 0:
-            more_text = f"... {start_idx} earlier moves hidden"
-            more_surface = self.font_small.render(more_text, True, (100, 100, 100))
-            self.screen.blit(more_surface, (15, start_y))
-    
-    def ai_move(self):
-        if not self.game_over and not self.paused:
-            self.ai_thinking = True
-            self.draw_status()
-            self.draw_history()
-            pygame.display.flip()
-            
-            time.sleep(0.3)
-            
-            if self.game.next_player == Player.black:
-                move = self.ai1_agent(self.game)
-            else:
-                move = self.ai2_agent(self.game)
-                
-            move_num = len(self.move_history) + 1
-            self.move_history.append((move_num, self.game.next_player, self.get_move_text(move)))
-            self.last_move = move
-            self.game = self.game.apply_move(move)
-            
-            if self.game.is_over():
-                self.game_over = True
-            self.ai_thinking = False
-    
-    def draw_status(self):
         ai1_label = self.font.render(f"AI 1 (Black): {self.ai1_type}", True, (0, 0, 0))
+        self.screen.blit(ai1_label, (10, start_y))
+        
         ai2_label = self.font.render(f"AI 2 (White): {self.ai2_type}", True, (0, 0, 0))
-        self.screen.blit(ai1_label, (10, 10))
-        self.screen.blit(ai2_label, (10, 30))
+        self.screen.blit(ai2_label, (10, start_y + line_height))
         
-        if self.game_over:
-            winner = self.game.winner()
-            if winner:
-                text = f"Game Over! Winner: {winner.name}"
-            else:
-                text = "Game Over! Draw"
-        elif self.paused:
-            text = "Paused - Press SPACE to continue"
-        elif self.ai_thinking:
-            text = f"AI thinking - {self.game.next_player.name}"
-        else:
-            text = f"Current: {self.game.next_player.name} - Press SPACE to pause"
+        game_label = self.font.render(f"Game: {self.current_game + 1}/{self.test_games}", True, (0, 0, 0))
+        self.screen.blit(game_label, (10, start_y + line_height * 2))
         
-        text_surface = self.font_large.render(text, True, self.colors['line'])
-        text_rect = text_surface.get_rect(center=(self.window_width // 2, 20))
-        pygame.draw.rect(self.screen, self.colors['bg'], text_rect)
-        self.screen.blit(text_surface, text_rect)
+        win1_label = self.font.render(f"AI 1 Wins: {self.results[Player.black]}", True, (0, 0, 0))
+        self.screen.blit(win1_label, (10, start_y + line_height * 3))
         
-        if self.game_over:
-            restart_text = self.font_large.render("Click anywhere to restart", True, self.colors['line'])
-            restart_rect = restart_text.get_rect(center=(self.window_width // 2, self.board_height - 20))
-            pygame.draw.rect(self.screen, self.colors['bg'], restart_rect)
-            self.screen.blit(restart_text, restart_rect)
+        win2_label = self.font.render(f"AI 2 Wins: {self.results[Player.white]}", True, (0, 0, 0))
+        self.screen.blit(win2_label, (10, start_y + line_height * 4))
+        
+        draw_label = self.font.render(f"Draws: {self.results[None]}", True, (0, 0, 0))
+        self.screen.blit(draw_label, (10, start_y + line_height * 5))
+        
+        if self.current_game > 0:
+            avg_moves = self.total_moves / self.current_game
+            avg_moves_label = self.font.render(f"Avg Moves: {avg_moves:.1f}", True, (0, 0, 0))
+            self.screen.blit(avg_moves_label, (250, start_y + line_height))
+            
+            avg_time = self.total_time / self.current_game
+            avg_time_label = self.font.render(f"Avg Time: {avg_time:.2f}s", True, (0, 0, 0))
+            self.screen.blit(avg_time_label, (250, start_y + line_height * 2))
+        
+        # 显示最后两步棋
+        last_moves_label = self.font.render("Last Moves:", True, (0, 0, 0))
+        self.screen.blit(last_moves_label, (250, start_y+100))
+        
+        if len(self.move_history) >= 1:
+            # 显示倒数第一步
+            player1, move1 = self.move_history[-1]
+            move1_text = self.format_move(player1, move1)
+            move1_label = self.font.render(move1_text, True, (0, 0, 0))
+            self.screen.blit(move1_label, (250, start_y + 100+line_height))
+        
+        if len(self.move_history) >= 2:
+            # 显示倒数第二步
+            player2, move2 = self.move_history[-2]
+            move2_text = self.format_move(player2, move2)
+            move2_label = self.font.render(move2_text, True, (0, 0, 0))
+            self.screen.blit(move2_label, (250, start_y + 100+line_height * 2))
     
     def draw_back_button(self):
         mouse_pos = pygame.mouse.get_pos()
@@ -216,29 +178,91 @@ class AIVsAIGameGUI:
                     self.should_return_to_menu = True
                     self.running = False
                     return
-                if self.game_over:
-                    self.game = GameState.new_game(self.board_size)
-                    self.game_over = False
-                    self.paused = False
-                    self.move_history = []
-                    self.last_move = None
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
                     self.paused = not self.paused
     
+    def format_move(self, player, move):
+        """将移动转换为文字描述"""
+        player_name = "Black" if player == Player.black else "White"
+        if move.is_pass:
+            return f"{player_name}: PASS"
+        elif move.is_resign:
+            return f"{player_name}: RESIGN"
+        else:
+            return f"{player_name}: ({move.point.row}, {move.point.col})"
+    
+    def run_single_game(self):
+        self.game = GameState.new_game(self.board_size)
+        self.last_move = None
+        self.move_history = []
+        agents = {
+            Player.black: self.ai1_agent,
+            Player.white: self.ai2_agent,
+        }
+        
+        move_count = 0
+        start_time = time.time()
+        
+        while not self.game.is_over() and self.running:
+            self.handle_events()
+            if not self.running:
+                # 用户提前退出，也要返回当前状态
+                duration = time.time() - start_time
+                winner = self.game.winner()
+                return winner, move_count, duration
+            
+            if self.paused:
+                self.draw_board()
+                self.draw_back_button()
+                self.draw_stats()
+                pygame.display.flip()
+                continue
+            
+            agent_fn = agents[self.game.next_player]
+            current_player = self.game.next_player
+            move = agent_fn(self.game)
+            self.last_move = move
+            self.move_history.append((current_player, move))
+            self.game = self.game.apply_move(move)
+            move_count += 1
+            
+            if move_count > self.board_size * self.board_size * 2:
+                break
+            
+            self.draw_board()
+            self.draw_back_button()
+            self.draw_stats()
+            pygame.display.flip()
+        
+        duration = time.time() - start_time
+        winner = self.game.winner()
+        return winner, move_count, duration
+    
     def run(self):
         clock = pygame.time.Clock()
+        
+        while self.current_game < self.test_games and self.running:
+            winner, moves, duration = self.run_single_game()
+            
+            # 即使提前退出，只要有对局数据就要统计
+            self.results[winner] += 1
+            self.total_moves += moves
+            self.total_time += duration
+            self.current_game += 1
+            
+            if not self.running:
+                break
+        
+        self.test_complete = True
         
         while self.running:
             self.handle_events()
             
-            if not self.game_over and not self.paused:
-                self.ai_move()
-            
             self.draw_board()
             self.draw_back_button()
-            self.draw_status()
-            self.draw_history()
+            self.draw_stats()
+            
             pygame.display.flip()
             clock.tick(30)
         
@@ -248,16 +272,18 @@ class AIVsAIGameGUI:
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="iGo AI vs AI GUI")
+    parser = argparse.ArgumentParser(description="iGo AI vs AI Test GUI")
     parser.add_argument("--size", type=int, default=5, help="Board size (default 5)")
     parser.add_argument("--ai1", choices=["random", "mcts", "minmax"], default="random", help="AI 1 (default random)")
     parser.add_argument("--ai2", choices=["random", "mcts", "minmax"], default="random", help="AI 2 (default random)")
+    parser.add_argument("--games", type=int, default=10, help="Number of games (default 10)")
     args = parser.parse_args()
     
-    gui = AIVsAIGameGUI(
+    gui = AIVsAITestGUI(
         board_size=args.size,
         ai1=args.ai1,
-        ai2=args.ai2
+        ai2=args.ai2,
+        test_games=args.games
     )
     gui.run()
 

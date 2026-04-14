@@ -12,6 +12,7 @@ from gui.main_menu import get_settings
 from gui.game_gui import GoGameGUI
 from gui.ai_gui import AIGoGameGUI
 from gui.ai_vs_ai import AIVsAIGameGUI
+from gui.ai_vs_ai_test import AIVsAITestGUI
 from gui.debug_gui import DebugGoGameGUI
 
 
@@ -20,6 +21,8 @@ def main():
         settings = get_settings()
         
         human_first = settings.get('ai_color', 'black') != 'black'
+        rave_k = settings.get('rave_k', 300)
+        minmax_eval = settings.get('minmax_eval', 'stone')
         
         if settings['debug'] and settings['mode'] == 'pva' and settings['ai1'] == 'mcts':
             gui = DebugGoGameGUI(
@@ -27,7 +30,10 @@ def main():
                 ai_agent='mcts',
                 human_first=human_first,
                 strategy=settings['strategy'],
-                max_depth=settings['max_depth']
+                num_rounds=settings['num_rounds'],
+                max_depth=settings['max_depth'],
+                rave_k=rave_k,
+                minmax_eval=minmax_eval
             )
         elif settings['mode'] == 'pva':
             gui = AIGoGameGUI(
@@ -36,19 +42,37 @@ def main():
                 human_first=human_first,
                 strategy=settings['strategy'],
                 num_rounds=settings['num_rounds'],
-                minimax_strategy=settings['minimax_strategy'],
-                max_depth=settings['max_depth']
+                minmax_strategy=settings['minmax_strategy'],
+                max_depth=settings['max_depth'],
+                rave_k=rave_k,
+                minmax_eval=minmax_eval
             )
         elif settings['mode'] == 'ava':
-            gui = AIVsAIGameGUI(
-                board_size=settings['size'],
-                ai1=settings['ai1'],
-                ai2=settings['ai2'],
-                strategy=settings['strategy'],
-                num_rounds=settings['num_rounds'],
-                minimax_strategy=settings['minimax_strategy'],
-                max_depth=settings['max_depth']
-            )
+            if settings.get('test_mode', False):
+                gui = AIVsAITestGUI(
+                    board_size=settings['size'],
+                    ai1=settings['ai1'],
+                    ai2=settings['ai2'],
+                    strategy=settings['strategy'],
+                    num_rounds=settings['num_rounds'],
+                    minmax_strategy=settings['minmax_strategy'],
+                    max_depth=settings['max_depth'],
+                    test_games=settings['test_games'],
+                    rave_k=rave_k,
+                    minmax_eval=minmax_eval
+                )
+            else:
+                gui = AIVsAIGameGUI(
+                    board_size=settings['size'],
+                    ai1=settings['ai1'],
+                    ai2=settings['ai2'],
+                    strategy=settings['strategy'],
+                    num_rounds=settings['num_rounds'],
+                    minmax_strategy=settings['minmax_strategy'],
+                    max_depth=settings['max_depth'],
+                    rave_k=rave_k,
+                    minmax_eval=minmax_eval
+                )
         
         should_return = gui.run()
         

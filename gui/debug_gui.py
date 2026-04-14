@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from dlgo import GameState, Player, Point
 from dlgo.goboard import Move
-from play import AGENTS, random_agent, minimax_agent
+from play import AGENTS, random_agent, minmax_agent
 from agents.mcts_agent import MCTSAgent
 
 
@@ -20,7 +20,7 @@ class TreeNodeWrapper:
 
 
 class DebugGoGameGUI:
-    def __init__(self, board_size=5, ai_agent="mcts", human_first=True, strategy='random', max_depth=3):
+    def __init__(self, board_size=5, ai_agent="mcts", human_first=True, strategy='random', num_rounds=100, max_depth=3, rave_k=300, minmax_eval='stone'):
         pygame.init()
         self.board_size = board_size
         
@@ -66,6 +66,7 @@ class DebugGoGameGUI:
         self.has_warning = False
         self.warning_message = ""
         self.warning_start_time = 0
+        self.last_move = None
         self.font = pygame.font.Font(None, 20)
         self.font_large = pygame.font.Font(None, 28)
         self.font_small = pygame.font.Font(None, 14)
@@ -75,11 +76,11 @@ class DebugGoGameGUI:
         self.resign_button_rect = pygame.Rect(self.board_height - 90, 10, 80, 35)
         
         if ai_agent == 'mcts':
-            self.mcts_agent_instance = MCTSAgent(num_rounds=100, strategy=strategy)
+            self.mcts_agent_instance = MCTSAgent(num_rounds=num_rounds, strategy=strategy, rave_k=rave_k)
             self.ai_agent = lambda gs: self.mcts_agent_instance.select_move(gs)
-        elif ai_agent == 'minimax':
+        elif ai_agent == 'minmax':
             from play import get_agent
-            self.ai_agent = get_agent(ai_agent, strategy=strategy, num_rounds=100, minimax_strategy='minmax', max_depth=max_depth)
+            self.ai_agent = get_agent(ai_agent, strategy=strategy, num_rounds=num_rounds, minmax_strategy='minmax', max_depth=max_depth, rave_k=rave_k, minmax_eval=minmax_eval)
         else:
             self.ai_agent = random_agent
         
@@ -183,8 +184,14 @@ class DebugGoGameGUI:
                     x = self.margin + (col - 1) * self.grid_size
                     y = self.margin + (row - 1) * self.grid_size
                     color = self.colors['black'] if stone == Player.black else self.colors['white']
-                    pygame.draw.circle(surface, color, (x, y), self.grid_size // 2 - 3)
-                    pygame.draw.circle(surface, self.colors['line'], (x, y), self.grid_size // 2 - 3, 1)
+                    pygame.draw.circle(surface, color, (x, y), self.grid_size // 2 - 8)
+                    pygame.draw.circle(surface, self.colors['line'], (x, y), self.grid_size // 2 - 8, 1)
+                    
+                    # 给最后落子的棋子添加框标记
+                    if self.last_move and self.last_move.is_play and self.last_move.point == point:
+                        box_size = self.grid_size // 2 - 12
+                        pygame.draw.rect(surface, (255, 0, 0), 
+                                        (x - box_size, y - box_size, box_size * 2, box_size * 2), 2)
     
     def get_board_pos(self, screen_pos):
         x, y = screen_pos
@@ -391,6 +398,7 @@ class DebugGoGameGUI:
             self.error_message = ""
             self.has_warning = False
             self.warning_message = ""
+            self.last_move = None
             return
             
         if self.ai_thinking or self.has_error:
@@ -414,6 +422,7 @@ class DebugGoGameGUI:
             try:
                 move_num = len(self.move_history) + 1
                 self.move_history.append((move_num, self.game.next_player, self.get_move_text(move)))
+                self.last_move = move
                 self.game = self.game.apply_move(move)
                 if self.game.is_over():
                     self.game_over = True
@@ -453,6 +462,7 @@ class DebugGoGameGUI:
                 
                 move_num = len(self.move_history) + 1
                 self.move_history.append((move_num, self.game.next_player, self.get_move_text(move)))
+                self.last_move = move
                 self.game = self.game.apply_move(move)
                 
                 if self.game.is_over():
@@ -671,10 +681,10 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description="iGo Debug GUI with MCTS Tree")
     parser.add_argument("--size", type=int, default=5, help="Board size (default 5)")
-    parser.add_argument("--ai", choices=["mcts", "minimax", "random"], default="mcts", help="AI agent")
+    parser.add_argument("--ai", choices=["mcts", "minmax", "random"], default="mcts", help="AI agent")
     parser.add_argument("--ai_first", action="store_true", help="AI first (default human first)")
     parser.add_argument("--strategy", choices=["random", "remove_first", "liberty_first"], default="random", help="MCTS strategy (default random)")
-    parser.add_argument("--max_depth", type=int, default=3, help="Minimax max depth (default 3)")
+    parser.add_argument("--max_depth", type=int, default=3, help="minmax max depth (default 3)")
     args = parser.parse_args()
     
     gui = DebugGoGameGUI(

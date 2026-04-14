@@ -11,7 +11,7 @@ from play import AGENTS
 
 
 class AIGoGameGUI:
-    def __init__(self, board_size=5, ai_agent="random", human_first=True, strategy='random', num_rounds=100, minimax_strategy='minmax', max_depth=3):
+    def __init__(self, board_size=5, ai_agent="random", human_first=True, strategy='random', num_rounds=100, minmax_strategy='minmax', max_depth=3, rave_k=300, minmax_eval='stone'):
         pygame.init()
         self.board_size = board_size
         self.grid_size = 80
@@ -44,9 +44,10 @@ class AIGoGameGUI:
         self.has_warning = False
         self.warning_message = ""
         self.warning_start_time = 0
+        self.last_move = None
         
         from play import get_agent
-        self.ai_agent = get_agent(ai_agent, strategy=strategy, num_rounds=num_rounds, minimax_strategy=minimax_strategy, max_depth=max_depth)
+        self.ai_agent = get_agent(ai_agent, strategy=strategy, num_rounds=num_rounds, minmax_strategy=minmax_strategy, max_depth=max_depth, rave_k=rave_k, minmax_eval=minmax_eval)
         
         self.human_player = Player.black if human_first else Player.white
         self.ai_player = Player.white if human_first else Player.black
@@ -106,8 +107,14 @@ class AIGoGameGUI:
                     x = self.margin + (col - 1) * self.grid_size
                     y = self.margin + (row - 1) * self.grid_size
                     color = self.colors['black'] if stone == Player.black else self.colors['white']
-                    pygame.draw.circle(self.screen, color, (x, y), self.grid_size // 2 - 3)
-                    pygame.draw.circle(self.screen, self.colors['line'], (x, y), self.grid_size // 2 - 3, 1)
+                    pygame.draw.circle(self.screen, color, (x, y), self.grid_size // 2 - 8)
+                    pygame.draw.circle(self.screen, self.colors['line'], (x, y), self.grid_size // 2 - 8, 1)
+                    
+                    # 给最后落子的棋子添加框标记
+                    if self.last_move and self.last_move.is_play and self.last_move.point == point:
+                        box_size = self.grid_size // 2 - 12
+                        pygame.draw.rect(self.screen, (255, 0, 0), 
+                                        (x - box_size, y - box_size, box_size * 2, box_size * 2), 2)
     
     def draw_history(self):
         history_rect = pygame.Rect(0, self.board_height, self.window_width, self.history_height)
@@ -267,6 +274,7 @@ class AIGoGameGUI:
             self.error_message = ""
             self.has_warning = False
             self.warning_message = ""
+            self.last_move = None
             return
             
         if self.ai_thinking or self.game.next_player != self.human_player:
@@ -287,6 +295,7 @@ class AIGoGameGUI:
             try:
                 move_num = len(self.move_history) + 1
                 self.move_history.append((move_num, self.game.next_player, self.get_move_text(move)))
+                self.last_move = move
                 self.game = self.game.apply_move(move)
                 if self.game.is_over():
                     self.game_over = True
@@ -308,6 +317,7 @@ class AIGoGameGUI:
                 move = self.ai_agent(self.game)
                 move_num = len(self.move_history) + 1
                 self.move_history.append((move_num, self.game.next_player, self.get_move_text(move)))
+                self.last_move = move
                 self.game = self.game.apply_move(move)
                 
                 if self.game.is_over():

@@ -89,8 +89,8 @@ class GoGameGUI:
                     x = self.margin + (col - 1) * self.grid_size
                     y = self.margin + (row - 1) * self.grid_size
                     color = self.colors['black'] if stone == Player.black else self.colors['white']
-                    pygame.draw.circle(self.screen, color, (x, y), self.grid_size // 2 - 3)
-                    pygame.draw.circle(self.screen, self.colors['line'], (x, y), self.grid_size // 2 - 3, 1)
+                    pygame.draw.circle(self.screen, color, (x, y), self.grid_size // 2 - 8)
+                    pygame.draw.circle(self.screen, self.colors['line'], (x, y), self.grid_size // 2 - 8, 1)
     
     def draw_history(self):
         history_rect = pygame.Rect(0, self.board_height, self.window_width, self.history_height)

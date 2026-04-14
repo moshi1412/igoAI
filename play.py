@@ -3,14 +3,14 @@
 
 用法：
     python play.py --agent1 mcts --agent2 random --size 5
-    python play.py --agent1 minimax --agent2 mcts --size 5 --games 10
+    python play.py --agent1 minmax --agent2 mcts --size 5 --games 10
 """
 
 import argparse
 import random
 import time
 
-from dlgo import GameState, Player, Point
+from dlgo import GameState, Player, Point,compute_game_result
 from dlgo.goboard import Move
 
 
@@ -27,40 +27,40 @@ def random_agent(game_state):
         return random.choice(moves)
 
 
-def mcts_agent(game_state, strategy='liberty_first', num_rounds=100):
+def mcts_agent(game_state, strategy='liberty_first', num_rounds=100, rave_k=300):
     """MCTS 智能体（占位，学生实现后替换）。"""
     try:
         from agents.mcts_agent import MCTSAgent
-        agent = MCTSAgent(num_rounds=num_rounds, strategy=strategy)
+        agent = MCTSAgent(num_rounds=num_rounds, strategy=strategy, rave_k=rave_k)
         return agent.select_move(game_state)
     except ImportError as e:
         print(f"[WARN] MCTSAgent 未实现或导入错误: {e}")
         return random_agent(game_state)
 
 
-def minimax_agent(game_state, strategy='alphabeta', max_depth=3):
-    """Minimax 智能体（占位，学生实现后替换）。"""
+def minmax_agent(game_state, strategy='alphabeta', max_depth=3, eval='stone'):
+    """minmax 智能体（占位，学生实现后替换）。"""
     try:
         from agents.minimax_agent import MinimaxAgent
-        agent = MinimaxAgent(max_depth=max_depth)
+        agent = MinimaxAgent(max_depth=max_depth, eval=eval)
         return agent.select_move(game_state, strategy=strategy)
     except ImportError as e:
         print(f"[WARN] MinimaxAgent 未实现或导入错误: {e}")
         return random_agent(game_state)
 
 
-def get_agent(agent_type, strategy='random', num_rounds=100, minimax_strategy='alphabeta', max_depth=3):
+def get_agent(agent_type, strategy='random', num_rounds=100, minmax_strategy='alphabeta', max_depth=3, rave_k=300, minmax_eval='stone'):
     """获取带策略参数的代理函数"""
     if agent_type == "mcts":
         def mcts_with_strategy(game_state):
-            return mcts_agent(game_state, strategy=strategy, num_rounds=num_rounds)
+            return mcts_agent(game_state, strategy=strategy, num_rounds=num_rounds, rave_k=rave_k)
         return mcts_with_strategy
     elif agent_type == "random":
         return random_agent
-    elif agent_type == "minimax":
-        def minimax_with_strategy(game_state):
-            return minimax_agent(game_state, strategy=minimax_strategy, max_depth=max_depth)
-        return minimax_with_strategy
+    elif agent_type == "minmax":
+        def minmax_with_strategy(game_state):
+            return minmax_agent(game_state, strategy=minmax_strategy, max_depth=max_depth, eval=minmax_eval)
+        return minmax_with_strategy
     else:
         return random_agent
 
@@ -68,7 +68,7 @@ def get_agent(agent_type, strategy='random', num_rounds=100, minimax_strategy='a
 AGENTS = {
     "random": random_agent,
     "mcts": mcts_agent,
-    "minimax": minimax_agent,
+    "minmax": minmax_agent,
 }
 
 
@@ -125,7 +125,8 @@ def play_game(agent1_fn, agent2_fn, board_size=9, verbose=True):
         move_count += 1
 
         if move_count > board_size * board_size * 2:
-            print("[WARN] 步数过多，强制结束")
+            winner = compute_game_result(game).winner
+            print(f"[WARN] 步数过多，强制结束,winner:{winner}")
             break
 
     duration = time.time() - start_time
@@ -147,7 +148,7 @@ def main():
     parser.add_argument(
         "--agent1",
         choices=AGENTS.keys(),
-        default="minimax",
+        default="minmax",
         help="黑方智能体",
     )
     parser.add_argument(

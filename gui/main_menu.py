@@ -100,7 +100,7 @@ class MainMenu:
     def __init__(self):
         pygame.init()
         self.width = 1200
-        self.height = 900
+        self.height = 980
         self.screen = pygame.display.set_mode((self.width, self.height))
         pygame.display.set_caption("iGo")
         self.clock = pygame.time.Clock()
@@ -116,10 +116,14 @@ class MainMenu:
             'ai2': 'random',
             'debug': False,
             'strategy': 'random',
-            'minimax_strategy': 'minmax',
+            'minmax_strategy': 'minmax',
+            'minmax_eval': 'stone',
             'ai_color': 'black',
             'num_rounds': 100,
-            'max_depth': 3
+            'max_depth': 3,
+            'test_mode': False,
+            'test_games': 10,
+            'rave_k': 300
         }
         
         self.buttons = {}
@@ -152,8 +156,8 @@ class MainMenu:
             150, 210, 160, 50, "MCTS",
             (150, 150, 150), (180, 180, 180)
         )
-        self.buttons['minimax1'] = Button(
-            150, 270, 160, 50, "Minimax",
+        self.buttons['minmax1'] = Button(
+            150, 270, 160, 50, "minmax",
             (150, 150, 150), (180, 180, 180)
         )
         
@@ -174,14 +178,17 @@ class MainMenu:
             890, 210, 160, 50, "MCTS",
             (150, 150, 150), (180, 180, 180)
         )
-        self.buttons['minimax2'] = Button(
-            890, 270, 160, 50, "Minimax",
+        self.buttons['minmax2'] = Button(
+            890, 270, 160, 50, "minmax",
             (150, 150, 150), (180, 180, 180)
         )
         
         self.checkboxes['debug'] = Checkbox(1000, 775, "Debug Mode", self.settings['debug'])
+        self.checkboxes['test_mode'] = Checkbox(400, 320, "Test Mode", self.settings['test_mode'])
+        self.input_boxes['test_games'] = InputBox(670, 325, 120, 40, str(self.settings['test_games']))
         
         self.input_boxes['num_rounds'] = InputBox(350, 480, 120, 40, str(self.settings['num_rounds']))
+        self.input_boxes['rave_k'] = InputBox(750, 485, 120, 40, str(self.settings['rave_k']))
         
         self.buttons['strategy_random'] = Button(
             150, 580, 160, 50, "Random",
@@ -195,24 +202,37 @@ class MainMenu:
             550, 580, 160, 50, "Liberty First",
             (150, 150, 150), (180, 180, 180)
         )
-        
-        self.buttons['minimax_minmax'] = Button(
-            150, 680, 200, 50, "Minimax",
+        self.buttons['strategy_rave'] = Button(
+            750, 580, 160, 50, "RAVE",
             (150, 150, 150), (180, 180, 180)
         )
-        self.buttons['minimax_alphabeta'] = Button(
+        
+        self.buttons['minmax_minmax'] = Button(
+            150, 680, 200, 50, "minmax",
+            (150, 150, 150), (180, 180, 180)
+        )
+        self.buttons['minmax_alphabeta'] = Button(
             350, 680, 200, 50, "Alpha-Beta",
             (150, 150, 150), (180, 180, 180)
         )
         
-        self.input_boxes['max_depth'] = InputBox(650, 685, 120, 40, str(self.settings['max_depth']))
+        self.buttons['minmax_eval_stone'] = Button(
+            650, 680, 200, 50, "Stone Eval",
+            (150, 150, 150), (180, 180, 180)
+        )
+        self.buttons['minmax_eval_territory'] = Button(
+            850, 680, 200, 50, "Territory Eval",
+            (150, 150, 150), (180, 180, 180)
+        )
+        
+        self.input_boxes['max_depth'] = InputBox(340, 750, 120, 40, str(self.settings['max_depth']))
         
         self.buttons['back'] = Button(
-            280, 750, 240, 60, "BACK",
+            280, 820, 240, 60, "BACK",
             (180, 80, 80), (210, 110, 110)
         )
         self.buttons['play'] = Button(
-            680, 750, 240, 60, "PLAY",
+            680, 820, 240, 60, "PLAY",
             (50, 150, 50), (80, 200, 80)
         )
         
@@ -232,7 +252,7 @@ class MainMenu:
         if self.settings['mode'] in ['pva', 'ava']:
             self.buttons['random1'].selected = (self.settings['ai1'] == 'random')
             self.buttons['mcts1'].selected = (self.settings['ai1'] == 'mcts')
-            self.buttons['minimax1'].selected = (self.settings['ai1'] == 'minimax')
+            self.buttons['minmax1'].selected = (self.settings['ai1'] == 'minmax')
         
         if self.settings['mode'] == 'pva':
             self.buttons['ai_black'].selected = (self.settings['ai_color'] == 'black')
@@ -241,17 +261,20 @@ class MainMenu:
         if self.settings['mode'] == 'ava':
             self.buttons['random2'].selected = (self.settings['ai2'] == 'random')
             self.buttons['mcts2'].selected = (self.settings['ai2'] == 'mcts')
-            self.buttons['minimax2'].selected = (self.settings['ai2'] == 'minimax')
+            self.buttons['minmax2'].selected = (self.settings['ai2'] == 'minmax')
         
         if self.settings['mode'] in ['pva', 'ava']:
             if self.settings['ai1'] == 'mcts' or self.settings['ai2'] == 'mcts':
                 self.buttons['strategy_random'].selected = (self.settings['strategy'] == 'random')
                 self.buttons['strategy_remove'].selected = (self.settings['strategy'] == 'remove_first')
                 self.buttons['strategy_liberty'].selected = (self.settings['strategy'] == 'liberty_first')
+                self.buttons['strategy_rave'].selected = (self.settings['strategy'] == 'rave')
             
-            if self.settings['ai1'] == 'minimax' or self.settings['ai2'] == 'minimax':
-                self.buttons['minimax_minmax'].selected = (self.settings['minimax_strategy'] == 'minmax')
-                self.buttons['minimax_alphabeta'].selected = (self.settings['minimax_strategy'] == 'alphabeta')
+            if self.settings['ai1'] == 'minmax' or self.settings['ai2'] == 'minmax':
+                self.buttons['minmax_minmax'].selected = (self.settings['minmax_strategy'] == 'minmax')
+                self.buttons['minmax_alphabeta'].selected = (self.settings['minmax_strategy'] == 'alphabeta')
+                self.buttons['minmax_eval_stone'].selected = (self.settings['minmax_eval'] == 'stone')
+                self.buttons['minmax_eval_territory'].selected = (self.settings['minmax_eval'] == 'territory')
     
     def draw_settings(self):
         self.update_button_selections()
@@ -269,7 +292,7 @@ class MainMenu:
             self.screen.blit(ai1_label, (150, 120))
             self.buttons['random1'].draw(self.screen)
             self.buttons['mcts1'].draw(self.screen)
-            self.buttons['minimax1'].draw(self.screen)
+            self.buttons['minmax1'].draw(self.screen)
         
         if self.settings['mode'] == 'pva':
             ai_color_label = self.font_label.render("AI Color:", True, (0, 0, 0))
@@ -282,31 +305,48 @@ class MainMenu:
             self.screen.blit(ai2_label, (890, 120))
             self.buttons['random2'].draw(self.screen)
             self.buttons['mcts2'].draw(self.screen)
-            self.buttons['minimax2'].draw(self.screen)
+            self.buttons['minmax2'].draw(self.screen)
         
         self.checkboxes['debug'].draw(self.screen)
+        
+        if self.settings['mode'] == 'ava':
+            self.checkboxes['test_mode'].draw(self.screen)
+            if self.checkboxes['test_mode'].checked:
+                test_games_label = self.font_label.render("Games:", True, (0, 0, 0))
+                self.screen.blit(test_games_label, (550, 320))
+                self.input_boxes['test_games'].draw(self.screen)
         
         if self.settings['mode'] in ['pva', 'ava']:
             if self.settings['ai1'] == 'mcts' or self.settings['ai2'] == 'mcts':
                 num_rounds_label = self.font_label.render("MCTS Rounds:", True, (0, 0, 0))
                 self.screen.blit(num_rounds_label, (150, 480))
                 self.input_boxes['num_rounds'].draw(self.screen)
+                
+                rave_k_label = self.font_label.render("RAVE k:", True, (0, 0, 0))
+                self.screen.blit(rave_k_label, (560, 480))
+                self.input_boxes['rave_k'].draw(self.screen)
             
                 strategy_label = self.font_label.render("MCTS Strategy:", True, (0, 0, 0))
                 self.screen.blit(strategy_label, (150, 540))
                 self.buttons['strategy_random'].draw(self.screen)
                 self.buttons['strategy_remove'].draw(self.screen)
                 self.buttons['strategy_liberty'].draw(self.screen)
+                self.buttons['strategy_rave'].draw(self.screen)
             
-            if self.settings['ai1'] == 'minimax' or self.settings['ai2'] == 'minimax':
-                minimax_strategy_label = self.font_label.render("Minimax Strategy:", True, (0, 0, 0))
-                self.screen.blit(minimax_strategy_label, (150, 640))
-                self.buttons['minimax_minmax'].draw(self.screen)
-                self.buttons['minimax_alphabeta'].draw(self.screen)
+            if self.settings['ai1'] == 'minmax' or self.settings['ai2'] == 'minmax':
+                minmax_strategy_label = self.font_label.render("minmax Strategy:", True, (0, 0, 0))
+                self.screen.blit(minmax_strategy_label, (150, 640))
+                self.buttons['minmax_minmax'].draw(self.screen)
+                self.buttons['minmax_alphabeta'].draw(self.screen)
                 
                 max_depth_label = self.font_label.render("Max Depth:", True, (0, 0, 0))
-                self.screen.blit(max_depth_label, (560, 640))
+                self.screen.blit(max_depth_label, (150, 740))
                 self.input_boxes['max_depth'].draw(self.screen)
+                
+                minmax_eval_label = self.font_label.render("minmax Eval:", True, (0, 0, 0))
+                self.screen.blit(minmax_eval_label, (550, 640))
+                self.buttons['minmax_eval_stone'].draw(self.screen)
+                self.buttons['minmax_eval_territory'].draw(self.screen)
         
         self.buttons['back'].draw(self.screen)
         self.buttons['play'].draw(self.screen)
@@ -329,8 +369,8 @@ class MainMenu:
                 self.settings['ai1'] = 'random'
             if self.buttons['mcts1'].is_clicked(event):
                 self.settings['ai1'] = 'mcts'
-            if self.buttons['minimax1'].is_clicked(event):
-                self.settings['ai1'] = 'minimax'
+            if self.buttons['minmax1'].is_clicked(event):
+                self.settings['ai1'] = 'minmax'
         
         if self.settings['mode'] == 'pva':
             if self.buttons['ai_black'].is_clicked(event):
@@ -343,14 +383,20 @@ class MainMenu:
                 self.settings['ai2'] = 'random'
             if self.buttons['mcts2'].is_clicked(event):
                 self.settings['ai2'] = 'mcts'
-            if self.buttons['minimax2'].is_clicked(event):
-                self.settings['ai2'] = 'minimax'
+            if self.buttons['minmax2'].is_clicked(event):
+                self.settings['ai2'] = 'minmax'
             
         self.checkboxes['debug'].is_clicked(event)
         self.settings['debug'] = self.checkboxes['debug'].checked
         
+        if self.settings['mode'] == 'ava':
+            self.checkboxes['test_mode'].is_clicked(event)
+            self.settings['test_mode'] = self.checkboxes['test_mode'].checked
+            self.input_boxes['test_games'].handle_event(event)
+        
         self.input_boxes['num_rounds'].handle_event(event)
         self.input_boxes['max_depth'].handle_event(event)
+        self.input_boxes['rave_k'].handle_event(event)
         
         if self.settings['mode'] in ['pva', 'ava']:
             if self.buttons['strategy_random'].is_clicked(event):
@@ -359,12 +405,18 @@ class MainMenu:
                 self.settings['strategy'] = 'remove_first'
             if self.buttons['strategy_liberty'].is_clicked(event):
                 self.settings['strategy'] = 'liberty_first'
+            if self.buttons['strategy_rave'].is_clicked(event):
+                self.settings['strategy'] = 'rave'
             
-            if self.settings['ai1'] == 'minimax' or self.settings['ai2'] == 'minimax':
-                if self.buttons['minimax_minmax'].is_clicked(event):
-                    self.settings['minimax_strategy'] = 'minmax'
-                if self.buttons['minimax_alphabeta'].is_clicked(event):
-                    self.settings['minimax_strategy'] = 'alphabeta'
+            if self.settings['ai1'] == 'minmax' or self.settings['ai2'] == 'minmax':
+                if self.buttons['minmax_minmax'].is_clicked(event):
+                    self.settings['minmax_strategy'] = 'minmax'
+                if self.buttons['minmax_alphabeta'].is_clicked(event):
+                    self.settings['minmax_strategy'] = 'alphabeta'
+                if self.buttons['minmax_eval_stone'].is_clicked(event):
+                    self.settings['minmax_eval'] = 'stone'
+                if self.buttons['minmax_eval_territory'].is_clicked(event):
+                    self.settings['minmax_eval'] = 'territory'
         
         if self.buttons['back'].is_clicked(event):
             self.state = "menu"
@@ -388,6 +440,20 @@ class MainMenu:
                     self.settings['max_depth'] = 3
             except ValueError:
                 self.settings['max_depth'] = 3
+            
+            try:
+                self.settings['test_games'] = int(self.input_boxes['test_games'].text)
+                if self.settings['test_games'] < 1:
+                    self.settings['test_games'] = 10
+            except ValueError:
+                self.settings['test_games'] = 10
+            
+            try:
+                self.settings['rave_k'] = int(self.input_boxes['rave_k'].text)
+                if self.settings['rave_k'] < 1:
+                    self.settings['rave_k'] = 300
+            except ValueError:
+                self.settings['rave_k'] = 300
             
             self.running = False
             
